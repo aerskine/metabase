@@ -4,7 +4,6 @@
                      [string :as s])
             [clojure.tools.logging :as log]
             [honeysql.core :as hsql]
-            [metabase.db.spec :as dbspec]
             [metabase.driver :as driver]
             [metabase.driver.generic-sql :as sql]
             [metabase.util :as u]
@@ -35,14 +34,23 @@
     (keyword "Long Varbinary") :type/*}
    column-type))
 
+(defn- vertica-spec [{:keys [host port db make-pool?]
+                      :or {host "localhost", port 5433, db "", make-pool? true}
+                      :as opts}]
+  (merge {:classname   "com.vertica.jdbc.Driver"
+          :subprotocol "vertica"
+          :subname     (str "//" host ":" port "/" db)
+          :make-pool?  make-pool?}
+         (dissoc opts :host :port :db :ssl)))
+
 (defn- connection-details->spec [details-map]
   (-> details-map
       (update :port (fn [port]
-                      (if (string? port) (Integer/parseInt port)
-                          port)))
-      (dissoc :ssl)               ; remove :ssl in case it's false; DB will still try (& fail) to connect if the key is there
+                      (if (string? port)
+                        (Integer/parseInt port)
+                        port)))
       (rename-keys {:dbname :db})
-      dbspec/vertica))
+      vertica-spec))
 
 (defn- unix-timestamp->timestamp [expr seconds-or-milliseconds]
   (case seconds-or-milliseconds

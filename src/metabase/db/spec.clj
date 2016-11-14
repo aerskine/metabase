@@ -26,19 +26,6 @@
           :make-pool? make-pool?}
          (dissoc opts :host :port :db)))
 
-(defn vertica
-  "Create a database specification for a vertica database. Opts should include
-  keys for :db, :user, and :password. You can also optionally set host and
-  port."
-  [{:keys [host port db make-pool?]
-    :or {host "localhost", port 5433, db "", make-pool? true}
-    :as opts}]
-  (merge {:classname "com.vertica.jdbc.Driver"
-          :subprotocol "vertica"
-          :subname (str "//" host ":" port "/" db)
-          :make-pool? make-pool?}
-         (dissoc opts :host :port :db)))
-
 (defn mysql
   "Create a database specification for a mysql database. Opts should include keys
   for :db, :user, and :password. You can also optionally set host and port.
