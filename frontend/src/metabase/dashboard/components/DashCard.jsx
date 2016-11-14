@@ -2,7 +2,7 @@ import React, { Component, PropTypes } from "react";
 import ReactDOM from "react-dom";
 
 import visualizations, { getVisualizationRaw } from "metabase/visualizations";
-import Visualization from "metabase/visualizations/components/Visualization.jsx";
+import Visualization, { ERROR_MESSAGE_GENERIC, ERROR_MESSAGE_PERMISSION } from "metabase/visualizations/components/Visualization.jsx";
 
 import ModalWithTrigger from "metabase/components/ModalWithTrigger.jsx";
 import ChartSettings from "metabase/visualizations/components/ChartSettings.jsx";
@@ -14,9 +14,6 @@ import DashCardParameterMapper from "../components/parameters/DashCardParameterM
 import cx from "classnames";
 import _ from "underscore";
 import { getIn } from "icepick";
-
-const ERROR_MESSAGE_GENERIC = "There was a problem displaying this chart.";
-const ERROR_MESSAGE_PERMISSION = "Sorry, you don't have permission to see this card."
 
 export default class DashCard extends Component {
     constructor(props, context) {
@@ -130,10 +127,10 @@ export default class DashCard extends Component {
                             series={series}
                             onRemove={onRemove}
                             onAddSeries={onAddSeries}
-                            onUpdateVisualizationSettings={this.props.onUpdateVisualizationSettings}
+                            onReplaceAllVisualizationSettings={this.props.onReplaceAllVisualizationSettings}
                         /> : undefined
                     }
-                    onUpdateVisualizationSetting={this.props.onUpdateVisualizationSetting}
+                    onUpdateVisualizationSettings={this.props.onUpdateVisualizationSettings}
                     replacementContent={isEditingParameter && <DashCardParameterMapper dashcard={dashcard} />}
                 />
             </div>
@@ -141,18 +138,18 @@ export default class DashCard extends Component {
     }
 }
 
-const DashCardActionButtons = ({ series, onRemove, onAddSeries, onUpdateVisualizationSettings }) =>
+const DashCardActionButtons = ({ series, onRemove, onAddSeries, onReplaceAllVisualizationSettings }) =>
     <span className="DashCard-actions flex align-center">
         { getVisualizationRaw(series).CardVisualization.supportsSeries &&
             <AddSeriesButton series={series} onAddSeries={onAddSeries} />
         }
-        { onUpdateVisualizationSettings &&
-            <ChartSettingsButton series={series} onUpdateVisualizationSettings={onUpdateVisualizationSettings} />
+        { onReplaceAllVisualizationSettings &&
+            <ChartSettingsButton series={series} onReplaceAllVisualizationSettings={onReplaceAllVisualizationSettings} />
         }
         <RemoveButton onRemove={onRemove} />
     </span>
 
-const ChartSettingsButton = ({ series, onUpdateVisualizationSettings }) =>
+const ChartSettingsButton = ({ series, onReplaceAllVisualizationSettings }) =>
     <ModalWithTrigger
         className="Modal Modal--wide Modal--tall"
         triggerElement={<Icon name="gear" />}
@@ -160,7 +157,7 @@ const ChartSettingsButton = ({ series, onUpdateVisualizationSettings }) =>
     >
         <ChartSettings
             series={series}
-            onChange={onUpdateVisualizationSettings}
+            onChange={onReplaceAllVisualizationSettings}
             isDashboard
         />
     </ModalWithTrigger>

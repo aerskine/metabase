@@ -3,6 +3,7 @@ import d3 from "d3";
 import dc from "dc";
 import moment from "moment";
 import _ from "underscore";
+import { updateIn } from "icepick";
 
 import {
     getAvailableCanvasWidth,
@@ -217,6 +218,10 @@ function applyChartYAxis(chart, settings, series, yExtent, axisName) {
     }
 
     if (axis.setting("axis_enabled")) {
+        // special case for normalized stacked charts
+        if (settings["stackable.stack_type"] === "normalized") {
+            axis.axis().tickFormat(value => (value * 100) + "%");
+        }
         chart.renderHorizontalGridLines(true);
         adjustTicksIfNeeded(axis.axis(), chart.height(), MIN_PIXELS_PER_TICK.y);
     } else {
@@ -261,6 +266,8 @@ function applyChartTooltips(chart, series, onHoverChange) {
     chart.on("renderlet.tooltips", function(chart) {
         chart.selectAll(".bar, .dot, .area, .line, .bubble, g.pie-slice, g.features")
             .on("mousemove", function(d, i) {
+                const isSingleSeriesBar = this.classList.contains("bar") && series.length === 1;
+
                 let data;
                 if (Array.isArray(d.key)) { // scatter
                     data = d.key.map((value, index) => (
@@ -274,7 +281,8 @@ function applyChartTooltips(chart, series, onHoverChange) {
                 }
 
                 onHoverChange && onHoverChange({
-                    index: determineSeriesIndexFromElement(this),
+                    // for single series bar charts, fade the series and highlght the hovered element with CSS
+                    index: isSingleSeriesBar ? -1 : determineSeriesIndexFromElement(this),
                     element: this,
                     d: d,
                     data: data && _.uniq(data, (d) => d.col)
@@ -696,7 +704,8 @@ export default function lineAreaBar(element, { series, onHoverChange, onRender, 
     let dimension, groups, yAxisSplit;
 
     const isScatter = chartType === "scatter";
-    const isStacked = settings["stackable.stacked"] && datas.length > 1
+    const isStacked = settings["stackable.stack_type"] && datas.length > 1;
+    const isNormalized = isStacked && settings["stackable.stack_type"] === "normalized";
 
     if (isScatter) {
         let dataset = crossfilter();
@@ -711,10 +720,26 @@ export default function lineAreaBar(element, { series, onHoverChange, onRender, 
         });
     } else if (isStacked) {
         let dataset = crossfilter();
+
+        // get the sum of the metric for each dimension value in order to scale
+        let scaleFactors = {};
+        if (isNormalized) {
+            for (let data of datas) {
+                for (let [d, m] of data) {
+                    scaleFactors[d] = (scaleFactors[d] || 0) + m;
+                }
+            }
+
+            series = series.map(s => updateIn(s, ["data", "cols", 1], (col) => ({
+                ...col,
+                display_name: "% " + getFriendlyName(col)
+            })));
+        }
+
         datas.map((data, i) =>
             dataset.add(data.map(d => ({
                 [0]: d[0],
-                [i + 1]: d[1]
+                [i + 1]: isNormalized ? (d[1] / scaleFactors[d[0]]) : d[1]
             })))
         );
 

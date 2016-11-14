@@ -1,25 +1,16 @@
 
-import { AngularResourceProxy, createAction, createThunkAction, handleActions, combineReducers } from "metabase/lib/redux";
+import { createAction, createThunkAction, handleActions, combineReducers } from "metabase/lib/redux";
 import { normalize, Schema, arrayOf } from "normalizr";
 
 import MetabaseAnalytics from "metabase/lib/analytics";
+
+import { SessionApi, UserApi, PermissionsApi } from "metabase/services";
 
 import moment from "moment";
 import _ from "underscore";
 import { assoc, dissoc } from "icepick";
 
 const user = new Schema('user');
-
-// resource wrappers
-const SessionApi = new AngularResourceProxy("Session", [
-    "forgot_password"
-]);
-const UserApi = new AngularResourceProxy("User", [
-    "list", "update", "create", "delete", "update_password", "send_invite"
-]);
-const PermissionsApi = new AngularResourceProxy("Permissions", [
-    "groups", "groupDetails", "memberships", "createMembership", "deleteMembership"
-]);
 
 // action constants
 export const CREATE_USER = 'metabase/admin/people/CREATE_USER';
@@ -60,6 +51,7 @@ export const loadMemberships = createAction(LOAD_MEMBERSHIPS, async () =>
 export const createMembership = createAction(CREATE_MEMBERSHIP, async ({ userId, groupId }) => {
     // pull the membership_id from the list of all memberships of the group
     let groupMemberships = await PermissionsApi.createMembership({ user_id: userId, group_id: groupId });
+    MetabaseAnalytics.trackEvent("People Groups", "Membership Added");
     return {
         user_id: userId,
         group_id: groupId,
@@ -68,6 +60,7 @@ export const createMembership = createAction(CREATE_MEMBERSHIP, async ({ userId,
 });
 export const deleteMembership = createAction(DELETE_MEMBERSHIP, async ({ membershipId }) => {
     await PermissionsApi.deleteMembership({ id: membershipId });
+    MetabaseAnalytics.trackEvent("People Groups", "Membership Deleted");
     return membershipId;
 });
 

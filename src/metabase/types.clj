@@ -32,6 +32,8 @@
 (derive :type/AvatarURL :type/URL)
 (derive :type/ImageURL :type/URL)
 
+(derive :type/Email :type/Text)
+
 (derive :type/City :type/Text)
 (derive :type/State :type/Text)
 (derive :type/Country :type/Text)
@@ -71,8 +73,7 @@
 (derive :type/City :type/Address)
 (derive :type/State :type/Address)
 (derive :type/Country :type/Address)
-(derive :type/Name :type/Address)
-(derive :type/Zip :type/Address)
+(derive :type/ZipCode :type/Address)
 
 
 ;;; Legacy Special Types. These will hopefully be going away in the future when we add columns like `:is_pk` and `:cardinality`

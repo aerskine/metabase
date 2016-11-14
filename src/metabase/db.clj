@@ -156,8 +156,11 @@
    Running `.update` directly doesn't seem to work as we'd expect; it ends up commiting the changes made and they can't be rolled back at
    the end of the transaction block. Converting the migration to SQL string and running that via `jdbc/execute!` seems to do the trick."
   [conn, ^Liquibase liquibase]
+  (log/info "Checking if Database has unran migrations...")
   (when (has-unran-migrations? liquibase)
+    (log/info "Database has unran migrations. Waiting for migration lock to be cleared...")
     (wait-for-migration-lock-to-be-cleared liquibase)
+    (log/info "Migration lock is cleared. Running migrations...")
     (doseq [line (migrations-lines liquibase)]
       (jdbc/execute! conn [line]))))
 
@@ -182,13 +185,17 @@
                (.rollback (jdbc/get-connection nested-transaction-connection))
                (log/error (u/format-color 'red "[ERROR] %s" (.getMessage e)))))))))
 
+(def ^{:arglists '([])} ^DatabaseFactory database-factory
+  "Return an instance of the Liquibase `DatabaseFactory`. This is done on a background thread at launch because otherwise it adds 2 seconds to startup time."
+  (partial deref (future (DatabaseFactory/getInstance))))
+
 (defn- conn->liquibase
   "Get a `Liquibase` object from JDBC CONN."
   (^Liquibase []
    (conn->liquibase (jdbc-details)))
   (^Liquibase [conn]
    (let [^JdbcConnection liquibase-conn (JdbcConnection. (jdbc/get-connection conn))
-         ^Database       database       (.findCorrectDatabaseImplementation (DatabaseFactory/getInstance) liquibase-conn)]
+         ^Database       database       (.findCorrectDatabaseImplementation (database-factory) liquibase-conn)]
      (Liquibase. changelog-file (ClassLoaderResourceAccessor.) database))))
 
 (defn migrate!
@@ -214,8 +221,10 @@
      ;; Disable auto-commit. This should already be off but set it just to be safe
      (.setAutoCommit (jdbc/get-connection conn) false)
      ;; Set up liquibase and let it do its thing
+     (log/info "Setting up Liquibase...")
      (try
        (let [liquibase (conn->liquibase conn)]
+         (log/info "Liquibase is ready.")
          (case direction
            :up            (migrate-up-if-needed! conn liquibase)
            :force         (force-migrate-up-if-needed! conn liquibase)
@@ -330,6 +339,13 @@
     (format "Unable to connect to Metabase %s DB." (name engine)))
   (log/info "Verify Database Connection ... ✅"))
 
+
+(def ^:dynamic ^Boolean *disable-data-migrations*
+  "Should we skip running data migrations when setting up the DB? (Default is `false`).
+   There are certain places where we don't want to do this; for example, none of the migrations should be ran when Metabase is launched via `load-from-h2`.
+   That's because they will end up doing things like creating duplicate entries for the \"magic\" groups and permissions entries. "
+  false)
+
 (defn setup-db!
   "Do general preparation of database by validating that we can connect.
    Caller can specify if we should run any pending database migrations."
@@ -339,6 +355,7 @@
   (reset! setup-db-has-been-called? true)
 
   (verify-db-connection (:type db-details) db-details)
+  (log/info "Running Database Migrations...")
 
   ;; Run through our DB migration process and make sure DB is fully prepared
   (if auto-migrate
@@ -358,10 +375,10 @@
   ;; Establish our 'default' DB Connection
   (create-connection-pool! (jdbc-details db-details))
 
-  ;; Do any custom code-based migrations now that the db structure is up to date
-  ;; NOTE: we use dynamic resolution to prevent circular dependencies
-  (require 'metabase.db.migrations)
-  ((resolve 'metabase.db.migrations/run-all)))
+  ;; Do any custom code-based migrations now that the db structure is up to date.
+  (when-not *disable-data-migrations*
+    (require 'metabase.db.migrations)
+    ((resolve 'metabase.db.migrations/run-all))))
 
 (defn setup-db-if-needed!
   "Call `setup-db!` if DB is not already setup; otherwise this does nothing."
@@ -461,7 +478,7 @@
 
 (defn- format-sql [sql]
   (when sql
-    (loop [sql sql, [k & more] ["FROM" "WHERE" "LEFT JOIN" "INNER JOIN" "ORDER BY" "LIMIT"]]
+    (loop [sql sql, [k & more] ["FROM" "LEFT JOIN" "INNER JOIN" "WHERE" "GROUP BY" "HAVING" "ORDER BY" "OFFSET" "LIMIT"]]
       (if-not k
         sql
         (recur (s/replace sql (re-pattern (format "\\s+%s\\s+" k)) (format "\n%s " k))
@@ -505,17 +522,6 @@
   (jdbc/query (db-connection) (honeysql->sql honeysql-form) options))
 
 
-;; TODO - wouldn't it be *pretty cool* if we just made entities implement the honeysql.format/ToSql protocol so we didn't need this function?
-;;        That would however mean we would have to make sure the entities are resolved first
-(defn entity->table-name
-  "Get the keyword table name associated with an ENTITY, which can be anything that can be passed to `resolve-entity`.
-
-     (db/entity->table-name 'CardFavorite) -> :report_cardfavorite"
-  ^clojure.lang.Keyword [entity]
-  {:post [(keyword? %)]}
-  (keyword (:table (resolve-entity entity))))
-
-
 (defn qualify
   "Qualify a FIELD-NAME name with the name its ENTITY. This is necessary for disambiguating fields for HoneySQL queries that contain joins.
 
@@ -523,7 +529,7 @@
   ^clojure.lang.Keyword [entity field-name]
   (if (vector? field-name)
     [(qualify entity (first field-name)) (second field-name)]
-    (hsql/qualify (entity->table-name entity) field-name)))
+    (hsql/qualify (:table (resolve-entity entity)) field-name)))
 
 (defn qualified?
   "Is FIELD-NAME qualified by (e.g. with its table name)?"
@@ -565,7 +571,7 @@
   (let [entity (resolve-entity entity)]
     (vec (for [object (query (merge {:select (or (models/default-fields entity)
                                                  [:*])
-                                     :from   [(entity->table-name entity)]}
+                                     :from   [entity]}
                                     honeysql-form))]
            (models/do-post-select entity object)))))
 
@@ -632,7 +638,7 @@
 
   (^Boolean [entity honeysql-form]
    (let [entity (resolve-entity entity)]
-     (not= [0] (execute! (merge (h/update (entity->table-name entity))
+     (not= [0] (execute! (merge (h/update entity)
                                 honeysql-form)))))
 
   (^Boolean [entity id kvs]
@@ -684,7 +690,7 @@
   ([entity conditions]
    {:pre [(map? conditions) (every? keyword? (keys conditions))]}
    (let [entity (resolve-entity entity)]
-     (not= [0] (execute! (-> (h/delete-from (entity->table-name entity))
+     (not= [0] (execute! (-> (h/delete-from entity)
                              (where conditions))))))
   ([entity k v & more]
    (delete! entity (apply array-map k v more))))
@@ -713,7 +719,7 @@
   {:pre [(sequential? row-maps) (every? map? row-maps)]}
   (when (seq row-maps)
     (let [entity (resolve-entity entity)]
-      (map (insert-id-key) (jdbc/insert-multi! (db-connection) (entity->table-name entity) row-maps {:entities (quote-fn)})))))
+      (map (insert-id-key) (jdbc/insert-multi! (db-connection) (keyword (:table entity)) row-maps {:entities (quote-fn)})))))
 
 (defn insert-many!
   "Insert several new rows into the Database. Resolves ENTITY, and calls `pre-insert` on each of the ROW-MAPS.
@@ -895,8 +901,8 @@
        (db/join [Table :raw_table_id] [RawTable :id])
        :active true)"
   [[source-entity fk] [dest-entity pk]]
-  {:left-join [(entity->table-name dest-entity) [:= (qualify source-entity fk)
-                                                    (qualify dest-entity pk)]]})
+  {:left-join [(resolve-entity dest-entity) [:= (qualify source-entity fk)
+                                                (qualify dest-entity pk)]]})
 
 
 (defn isa

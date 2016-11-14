@@ -1,4 +1,6 @@
 import React, { Component, PropTypes } from "react";
+import ReactDOM from "react-dom";
+
 import cx from "classnames";
 import _ from "underscore";
 
@@ -34,8 +36,9 @@ export default class AccordianList extends Component {
     }
 
     static propTypes = {
+        id: PropTypes.string,
         sections: PropTypes.array.isRequired,
-        searchable: PropTypes.bool,
+        searchable: PropTypes.oneOfType([PropTypes.bool, PropTypes.func]),
         initiallyOpenSection: PropTypes.number,
         openSection: PropTypes.number,
         onChange: PropTypes.func,
@@ -52,11 +55,19 @@ export default class AccordianList extends Component {
 
     static defaultProps = {
         style: {},
-        searchable: false,
+        searchable: (section) => section.items.length > 10,
         alwaysTogglable: false,
         alwaysExpanded: false,
-        hideSingleSectionTitle: false
+        hideSingleSectionTitle: false,
     };
+
+    componentDidMount() {
+        // when the component is mounted and an item is selected then scroll to it
+        const element = this.refs.selected && ReactDOM.findDOMNode(this.refs.selected);
+        if (element) {
+            element.scrollIntoView();
+        }
+    }
 
     toggleSection(sectionIndex) {
         if (this.props.onChangeSection) {
@@ -153,15 +164,17 @@ export default class AccordianList extends Component {
     }
 
     render() {
-        const { searchable, searchPlaceholder, sections, showItemArrows, alwaysTogglable, alwaysExpanded, hideSingleSectionTitle, style } = this.props;
+        const { id, searchable, searchPlaceholder, sections, showItemArrows, alwaysTogglable, alwaysExpanded, hideSingleSectionTitle, style } = this.props;
         const { searchText } = this.state;
 
         const openSection = this.getOpenSection();
         const sectionIsOpen = (sectionIndex) =>
             alwaysExpanded || openSection === sectionIndex;
+        const sectionIsSearchable = (sectionIndex) =>
+            searchable && (typeof searchable !== "function" || searchable(sections[sectionIndex]));
 
         return (
-            <div className={this.props.className} style={{ width: '300px', ...style }}>
+            <div id={id} className={this.props.className} style={{ width: '300px', ...style }}>
                 {sections.map((section, sectionIndex) =>
                     <section key={sectionIndex} className={cx("List-section", { "List-section--open": sectionIsOpen(sectionIndex) })}>
                         { section.name && alwaysExpanded ?
@@ -175,7 +188,7 @@ export default class AccordianList extends Component {
                                     <div className="List-section-header px1 py1 cursor-pointer full flex align-center" onClick={() => this.toggleSection(sectionIndex)}>
                                         { this.renderSectionIcon(section, sectionIndex) }
                                         <h3 className="List-section-title">{section.name}</h3>
-                                        { section.items.length > 0 &&
+                                        { sections.length > 1 &&
                                             <span className="flex-align-right">
                                                 <Icon name={sectionIsOpen(sectionIndex) ? "chevronup" : "chevrondown"} size={12} />
                                             </span>
@@ -190,7 +203,7 @@ export default class AccordianList extends Component {
                             </div>
                         : null }
 
-                        { searchable &&
+                        { sectionIsSearchable(sectionIndex) &&  sectionIsOpen(sectionIndex) && section.items.length > 0 &&
                             /* NOTE: much of this structure is here just to match strange stuff in 'List-item' below so things align properly */
                             <div className="px1 pt1">
                                 <div style={{border: "2px solid transparent", borderRadius: "6px"}}>
@@ -198,6 +211,7 @@ export default class AccordianList extends Component {
                                         onChange={(val) => this.setState({searchText: val})}
                                         searchText={this.state.searchText}
                                         placeholder={searchPlaceholder}
+                                        autoFocus
                                     />
                                 </div>
                             </div>
@@ -209,7 +223,11 @@ export default class AccordianList extends Component {
                                 className={cx("p1", { "border-bottom scroll-y scroll-show": !alwaysExpanded })}
                             >
                                 { section.items.filter((i) => searchText ? (i.name.toLowerCase().includes(searchText.toLowerCase())) : true ).map((item, itemIndex) =>
-                                    <li key={itemIndex} className={cx("List-item flex", { 'List-item--selected': this.itemIsSelected(item, itemIndex), 'List-item--disabled': !this.itemIsClickable(item) }, this.getItemClasses(item, itemIndex))}>
+                                    <li
+                                        key={itemIndex}
+                                        ref={this.itemIsSelected(item, itemIndex) ? "selected" : null}
+                                        className={cx("List-item flex", { 'List-item--selected': this.itemIsSelected(item, itemIndex), 'List-item--disabled': !this.itemIsClickable(item) }, this.getItemClasses(item, itemIndex))}
+                                    >
                                         <a
                                             className={cx("flex-full flex align-center px1", this.itemIsClickable(item) ? "cursor-pointer" : "cursor-default")}
                                             style={{ paddingTop: "0.25rem", paddingBottom: "0.25rem" }}

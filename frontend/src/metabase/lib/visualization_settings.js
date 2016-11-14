@@ -6,10 +6,11 @@ import {
     getChartTypeFromData,
     DIMENSION_DIMENSION_METRIC,
     DIMENSION_METRIC,
-    DIMENSION_METRIC_METRIC
+    DIMENSION_METRIC_METRIC,
+    getColumnCardinality
 } from "metabase/visualizations/lib/utils";
 
-import { isNumeric, isDate, isMetric, isDimension, hasLatitudeAndLongitudeColumns } from "metabase/lib/schema_metadata";
+import { isNumeric, isDate, isMetric, isDimension, isLatitude, isLongitude, hasLatitudeAndLongitudeColumns } from "metabase/lib/schema_metadata";
 import Query from "metabase/lib/query";
 import { capitalize } from "metabase/lib/formatting";
 
@@ -20,6 +21,7 @@ import { dimensionIsNumeric } from "metabase/visualizations/lib/numeric";
 
 import ChartSettingInput from "metabase/visualizations/components/settings/ChartSettingInput.jsx";
 import ChartSettingInputNumeric from "metabase/visualizations/components/settings/ChartSettingInputNumeric.jsx";
+import ChartSettingRadio from "metabase/visualizations/components/settings/ChartSettingRadio.jsx";
 import ChartSettingSelect from "metabase/visualizations/components/settings/ChartSettingSelect.jsx";
 import ChartSettingToggle from "metabase/visualizations/components/settings/ChartSettingToggle.jsx";
 import ChartSettingFieldPicker from "metabase/visualizations/components/settings/ChartSettingFieldPicker.jsx";
@@ -73,7 +75,7 @@ function getDefaultLineAreaBarColumns([{ data: { cols, rows } }]) {
             if (isDate(dimensions[1]) && !isDate(dimensions[0])) {
                 // if the series dimension is a date but the axis dimension is not then swap them
                 dimensions.reverse();
-            } else if (dimensions[1].cardinality > dimensions[0].cardinality) {
+            } else if (getColumnCardinality(cols, rows, 1) > getColumnCardinality(cols, rows, 0)) {
                 // if the series dimension is higher cardinality than the axis dimension then swap them
                 dimensions.reverse();
             }
@@ -226,10 +228,22 @@ const SETTINGS = {
         title: "Show point markers on lines",
         widget: ChartSettingToggle
     },
-    "stackable.stacked": {
+    "stackable.stack_type": {
         section: "Display",
-        title: "Stacked",
-        widget: ChartSettingToggle,
+        title: "Stacking",
+        widget: ChartSettingRadio,
+        getProps: (series, vizSettings) => ({
+            options: [
+                { name: "Don't stack", value: null },
+                { name: "Stack", value: "stacked" },
+                { name: "Stack - 100%", value: "normalized" }
+            ]
+        }),
+        getDefault: (series, vizSettings) =>
+            vizSettings["stackable.stacked"] ? "stacked" : null
+    },
+    // legacy, supeceded by stackable.stack_type
+    "stackable.stacked": {
         readDependencies: ["graph.metrics"],
         getDefault: ([{ card, data }], vizSettings) => (
             // area charts should usually be stacked
@@ -529,7 +543,7 @@ const SETTINGS = {
             columnsAreValid(card.visualization_settings["table.columns"].map(x => x.name), data),
         getDefault: ([{ data: { cols }}]) => cols.map(col => ({
             name: col.name,
-            enabled: true
+            enabled: col.visibility_type !== "details-only"
         })),
         getProps: ([{ data: { cols }}]) => ({
             columnNames: cols.reduce((o, col) => ({ ...o, [col.name]: getFriendlyName(col)}), {})
@@ -564,7 +578,7 @@ const SETTINGS = {
         title: "Latitude field",
         widget: ChartSettingSelect,
         getDefault: ([{ card, data: { cols }}]) =>
-            (_.findWhere(cols, { special_type: "latitude" }) || {}).name,
+            (_.find(cols, isLatitude) || {}).name,
         getProps: ([{ card, data: { cols }}]) => ({
             options: cols.filter(isNumeric).map(getOptionFromColumn)
         }),
@@ -574,7 +588,7 @@ const SETTINGS = {
         title: "Longitude field",
         widget: ChartSettingSelect,
         getDefault: ([{ card, data: { cols }}]) =>
-            (_.findWhere(cols, { special_type: "longitude" }) || {}).name,
+            (_.find(cols, isLongitude) || {}).name,
         getProps: ([{ card, data: { cols }}]) => ({
             options: cols.filter(isNumeric).map(getOptionFromColumn)
         }),
@@ -623,15 +637,21 @@ const SETTINGS = {
         }),
         getHidden: (series, vizSettings) => vizSettings["map.type"] !== "region"
     },
-    // TODO: translate legacy settings
     "map.zoom": {
-        default: 9
     },
     "map.center_latitude": {
-        default: 37.7577 //defaults to SF ;-)
     },
     "map.center_longitude": {
-        default: -122.4376
+    },
+    "map.pin_type": {
+        title: "Pin type",
+        // Don't expose this in the UI for now
+        // widget: ChartSettingSelect,
+        props: {
+            options: [{ name: "Tiles", value: "tiles" }, { name: "Markers", value: "markers" }]
+        },
+        getDefault: (series) => series[0].data.rows.length >= 1000 ? "tiles" : "markers",
+        getHidden: (series, vizSettings) => vizSettings["map.type"] !== "pin"
     }
 };
 
@@ -659,6 +679,7 @@ function getSetting(id, vizSettings, series) {
 
     const settingDef = SETTINGS[id];
     const [{ card }] = series;
+    const visualization_settings = card.visualization_settings || {};
 
     for (let dependentId of settingDef.readDependencies || []) {
         getSetting(dependentId, vizSettings, series);
@@ -673,9 +694,9 @@ function getSetting(id, vizSettings, series) {
             return vizSettings[id] = settingDef.getValue(series, vizSettings);
         }
 
-        if (card.visualization_settings[id] !== undefined) {
+        if (visualization_settings[id] !== undefined) {
             if (!settingDef.isValid || settingDef.isValid(series, vizSettings)) {
-                return vizSettings[id] = card.visualization_settings[id];
+                return vizSettings[id] = visualization_settings[id];
             }
         }
 

@@ -114,7 +114,7 @@ var config = module.exports = {
             }
         ],
         noParse: [
-            /node_modules\/(angular|ace|moment|underscore)/ // doesn't include 'crossfilter', 'dc', and 'tether' due to use of 'require'
+            /node_modules\/(ace|moment|underscore)/ // doesn't include 'crossfilter', 'dc', and 'tether' due to use of 'require'
         ]
     },
 
@@ -124,14 +124,6 @@ var config = module.exports = {
             'metabase':             SRC_PATH,
             'style':                SRC_PATH + '/css/core/index.css',
 
-            // angular
-            'angular':              __dirname + '/node_modules/angular/angular.min.js',
-            'angular-cookies':      __dirname + '/node_modules/angular-cookies/angular-cookies.min.js',
-            'angular-resource':     __dirname + '/node_modules/angular-resource/angular-resource.min.js',
-            'angular-route':        __dirname + '/node_modules/angular-route/angular-route.min.js',
-            // angular 3rd-party
-            'angular-cookie':       __dirname + '/node_modules/angular-cookie/angular-cookie.min.js',
-            'angular-http-auth':    __dirname + '/node_modules/angular-http-auth/src/http-auth-interceptor.js',
             // ace
             'ace/ace':              __dirname + '/node_modules/ace-builds/src-min-noconflict/ace.js',
             'ace/ext-language_tools':__dirname+ '/node_modules/ace-builds/src-min-noconflict/ext-language_tools.js',
@@ -205,7 +197,7 @@ if (NODE_ENV === "hot") {
         config.entry.app
     ];
 
-    // suffixing with ".hot" allows us to run both `npm run build-hot` and `npm run test` or `npm run test-watch` simultaneously
+    // suffixing with ".hot" allows us to run both `yarn run build-hot` and `yarn run test` or `yarn run test-watch` simultaneously
     config.output.filename = "[name].hot.bundle.js?[hash]";
 
     // point the publicPath (inlined in index.html by HtmlWebpackPlugin) to the hot-reloading server
@@ -220,8 +212,15 @@ if (NODE_ENV === "hot") {
     // disable ExtractTextPlugin
     config.module.loaders[config.module.loaders.length - 1].loader = "style-loader!css-loader?" + JSON.stringify(CSS_CONFIG) + "!postcss-loader"
 
+    config.devServer = {
+        hot: true,
+        inline: true,
+        contentBase: "frontend"
+    };
+
     config.plugins.unshift(
-        new webpack.NoErrorsPlugin()
+        new webpack.NoErrorsPlugin(),
+        new webpack.HotModuleReplacementPlugin()
     );
 }
 
@@ -244,6 +243,13 @@ if (process.env.ENABLE_FLOW) {
 if (NODE_ENV === "hot" || isWatching) {
     // enable "cheap" source maps in hot or watch mode since re-build speed overhead is < 1 second
     config.devtool = "eval-cheap-module-source-map";
+
+    // works with breakpoints
+    // config.devtool = "inline-source-map"
+
+    // helps with source maps
+    config.output.devtoolModuleFilenameTemplate = '[absolute-resource-path]';
+    config.output.pathinfo = true;
 } else if (NODE_ENV === "production") {
     config.devtool = "source-map";
 }
