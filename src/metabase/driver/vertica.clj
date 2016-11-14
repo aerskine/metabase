@@ -35,12 +35,13 @@
    column-type))
 
 (defn- vertica-spec [{:keys [host port db make-pool?]
-                      :or {host "localhost", port 5433, db "", make-pool? true}
+                      :or {host "localhost", port 5433, db ""}
                       :as opts}]
   (merge {:classname   "com.vertica.jdbc.Driver"
           :subprotocol "vertica"
-          :subname     (str "//" host ":" port "/" db)
-          :make-pool?  make-pool?}
+          :subname     (u/prog1 (str "//" host ":" port "/" db "?MaxClientSessions=4294967295") ; "SELECT SET_CONFIG_PARAMETER('MaxClientSessions', 4294967295)"
+                         (println "connectionString:" <>) ; NOCOMMIT
+                         )}
          (dissoc opts :host :port :db :ssl)))
 
 (defn- connection-details->spec [details-map]

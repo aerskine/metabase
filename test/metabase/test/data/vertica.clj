@@ -25,12 +25,11 @@
   (or (env :mb-vertica-db)
       "docker"))
 
-(defn- database->connection-details [_ {:keys [short-lived?]}]
+(defn- database->connection-details [& _]
   {:host         (or (env :mb-vertica-host) "localhost")
    :db           (db-name)
    :port         5433
    :timezone     :America/Los_Angeles                  ; why?
-   :short-lived? short-lived?
    :user         (or (env :mb-vertica-user) "dbadmin")
    :password     (env :mb-vertica-password)})
 
@@ -43,8 +42,8 @@
 (u/strict-extend VerticaDriver
   generic/IGenericSQLDatasetLoader
   (merge generic/DefaultsMixin
-         {:create-db-sql             (constantly "SELECT SET_CONFIG_PARAMETER('MaxClientSessions', 4294967295)") ; for Vertica we don't actually create DBs, so use this as an opportunity
-          :drop-db-if-exists-sql     (constantly nil)                                                            ; to raise the connection limit from default of 35 so tests don't fail
+         {:create-db-sql             (constantly nil)
+          :drop-db-if-exists-sql     (constantly nil)
           :drop-table-if-exists-sql  generic/drop-table-if-exists-cascade-sql
           :field-base-type->sql-type (u/drop-first-arg field-base-type->sql-type)
           :load-data!                generic/load-data-one-at-a-time-parallel!
