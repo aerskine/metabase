@@ -40,6 +40,7 @@
                                net.sourceforge.nekohtml/nekohtml
                                ring/ring-core]]
                  [com.draines/postal "2.0.1"]                         ; SMTP library
+                 [com.facebook.presto/presto-jdbc "0.155"]            ; Presto JDBC driver
                  [com.google.apis/google-api-services-analytics       ; Google Analytics Java Client Library
                   "v3-rev135-1.22.0"]
                  [com.google.apis/google-api-services-bigquery        ; Google BigQuery Java Client Library
