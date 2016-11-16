@@ -212,13 +212,27 @@
   [_ honeysql-form {clause :filter}]
   (h/where honeysql-form (filter-clause->predicate clause)))
 
+(defn apply-join-tables
+  "Apply expanded query `join-tables` clause to HONEYSQL-FORM. Default implementation of `apply-join-tables` for SQL drivers."
+  [_ honeysql-form {join-tables :join-tables, {source-table-name :name, source-schema :schema} :source-table}]
+  (loop [honeysql-form honeysql-form, [{:keys [table-name pk-field source-field schema join-alias]} & more] join-tables]
+    (let [honeysql-form (h/merge-left-join honeysql-form
+                                           [(hx/qualify-and-escape-dots table-name) (keyword join-alias)]
+                                           [:= (hx/qualify-and-escape-dots source-table-name (:field-name source-field))
+                                            (hx/qualify-and-escape-dots join-alias (:field-name pk-field))])]
+      (if (seq more)
+        (recur honeysql-form more)
+        honeysql-form))))
+
 (def PrestoISQLDriverMixin
   "Implementations of `ISQLDriver` methods for `PrestoDriver`."
   (merge (sql/ISQLDriverDefaultsMixin)
-         {:apply-breakout            apply-breakout
-          :apply-order-by            apply-order-by
+         {:apply-aggregation         apply-aggregation
+          :apply-breakout            apply-breakout
           :apply-fields              apply-fields
           :apply-filter              apply-filter
+          :apply-join-tables         apply-join-tables
+          :apply-order-by            apply-order-by
           :connection-details->spec  (u/drop-first-arg dbspec-presto)
           :column->base-type         (u/drop-first-arg column->base-type)
           :date                      (u/drop-first-arg date)
