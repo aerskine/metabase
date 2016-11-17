@@ -9,7 +9,8 @@
             [clojure.tools.logging :as log]
             [metabase.util.honeysql-extensions :as hx]
             (honeysql [core :as hsql]
-                      [helpers :as h]))
+                      [helpers :as h])
+            [clojure.set :as set])
   (:import (java.sql Connection Statement DatabaseMetaData)
            (metabase.driver.generic_sql ISQLDriver)))
 
@@ -224,10 +225,25 @@
         (recur honeysql-form more)
         honeysql-form))))
 
+(defn fast-active-tables
+  "Default, fast implementation of `ISQLDriver/active-tables` best suited for DBs with lots of system tables (like Oracle).
+   Fetch list of schemas, then for each one not in `excluded-schemas`, fetch its Tables, and combine the results.
+
+   This is as much as 15x faster for Databases with lots of system tables than `post-filtered-active-tables` (4 seconds vs 60)."
+  [driver, ^DatabaseMetaData metadata]
+  (let [jdbc-schemas (jdbc/result-set-seq (.getSchemas metadata))
+        all-schemas  (set (map :table_schem jdbc-schemas))
+        schemas      (set/difference all-schemas (sql/excluded-schemas driver))]
+    (set (for [schema schemas
+               table  (jdbc/result-set-seq (.getTables metadata nil schema "%" (into-array String ["TABLE", "VIEW", "FOREIGN TABLE"])))] ; tablePattern "%" = match all tables
+           {:name   (:table-name table)
+            :schema schema}))))
+
 (def PrestoISQLDriverMixin
   "Implementations of `ISQLDriver` methods for `PrestoDriver`."
   (merge (sql/ISQLDriverDefaultsMixin)
-         {:apply-aggregation         apply-aggregation
+         {                                                  ;:active-tables             fast-active-tables
+          :apply-aggregation         apply-aggregation
           :apply-breakout            apply-breakout
           :apply-fields              apply-fields
           :apply-filter              apply-filter
