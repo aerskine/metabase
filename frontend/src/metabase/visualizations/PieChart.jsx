@@ -39,7 +39,7 @@ export default class PieChart extends Component {
 
     static checkRenderable(cols, rows, settings) {
         if (!settings["pie.dimension"] || !settings["pie.metric"]) {
-            throw new ChartSettingsError("Please select columns in the chart settings.", "Data");
+            throw new ChartSettingsError("Which columns do want to use?", "Data");
         }
     }
 
@@ -100,7 +100,7 @@ export default class PieChart extends Component {
         }
 
         let legendTitles = slices.map(slice => [
-            slice.key === "Other" ? slice.key : formatDimension(slice.key, false),
+            slice.key === "Other" ? slice.key : formatDimension(slice.key, true),
             settings["pie.show_legend_perecent"] ? formatPercent(slice.percentage) : undefined
         ]);
         let legendColors = slices.map(slice => slice.color);
