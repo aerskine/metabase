@@ -243,7 +243,7 @@
   "Implementations of `ISQLDriver` methods for `PrestoDriver`."
   (merge (sql/ISQLDriverDefaultsMixin)
          {                                                  ;:active-tables             fast-active-tables
-          :apply-aggregation         apply-aggregation
+          ;:apply-aggregation         apply-aggregation
           :apply-breakout            apply-breakout
           :apply-fields              apply-fields
           :apply-filter              apply-filter
@@ -281,8 +281,10 @@
                                               :display-name "Schema"
                                               :default      "default"}])
          :execute-query         execute-query
-         :features              (constantly #{:standard-deviation-aggregations
-                                              :expressions})
+         :features              (constantly #{:basic-aggregations
+                                              :standard-deviation-aggregations
+                                              :expressions
+                                              :expression-aggregations})
          :mbql->native          mbql->native})
 
  sql/ISQLDriver
