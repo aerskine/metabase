@@ -6,7 +6,7 @@
                      [string :as str])
             [clojure.tools.logging :as log]
             [schema.core :as s]
-            [metabase.db :as db]
+            [toucan.db :as db]
             [metabase.models.table :refer [Table]]
             [metabase.query-processor.interface :refer [*driver*], :as i]
             [metabase.util :as u]
@@ -58,6 +58,13 @@
     (do (log/warn (u/format-color 'yellow "Referring to fields by their bare ID (%d) is deprecated in MBQL '98. Please use [:field-id %d] instead." f f))
         (field-id f))
     f))
+
+(s/defn ^:ql ^:always-validate named :- i/Aggregation
+  "Specify a CUSTOM-NAME to use for a top-level AGGREGATION-OR-EXPRESSION in the results.
+   (This will probably be extended to support Fields in the future, but for now, only the `:aggregation` clause is supported.)"
+  {:added "0.22.0"}
+  [aggregation-or-expression :- i/Aggregation, custom-name :- su/NonBlankString]
+  (assoc aggregation-or-expression :custom-name custom-name))
 
 (s/defn ^:ql ^:always-validate datetime-field :- FieldPlaceholder
   "Reference to a `DateTimeField`. This is just a `Field` reference with an associated datetime UNIT."
@@ -122,11 +129,11 @@
                        (if (number? arg)
                          arg
                          (field-or-expression arg))))
-    ;; otherwise if it's not an Expression it's a a
+    ;; otherwise if it's not an Expression it's a Field
     (field f)))
 
 (s/defn ^:private ^:always-validate ag-with-field :- i/Aggregation [ag-type f]
-  (i/strict-map->AggregationWithField {:aggregation-type ag-type, :field (field-or-expression f)}))
+  (i/map->AggregationWithField {:aggregation-type ag-type, :field (field-or-expression f)}))
 
 (def ^:ql ^{:arglists '([f])} avg      "Aggregation clause. Return the average value of F."                (partial ag-with-field :avg))
 (def ^:ql ^{:arglists '([f])} distinct "Aggregation clause. Return the number of distinct values of F."    (partial ag-with-field :distinct))
@@ -144,13 +151,13 @@
 
 (s/defn ^:ql ^:always-validate count :- i/Aggregation
   "Aggregation clause. Return total row count (e.g., `COUNT(*)`). If F is specified, only count rows where F is non-null (e.g. `COUNT(f)`)."
-  ([]  (i/strict-map->AggregationWithoutField {:aggregation-type :count}))
+  ([]  (i/map->AggregationWithoutField {:aggregation-type :count}))
   ([f] (ag-with-field :count f)))
 
 (s/defn ^:ql ^:always-validate cum-count :- i/Aggregation
   "Aggregation clause. Return the cumulative row count (presumably broken out in some way)."
   []
-  (i/strict-map->AggregationWithoutField {:aggregation-type :cumulative-count}))
+  (i/map->AggregationWithoutField {:aggregation-type :cumulative-count}))
 
 (defn ^:ql ^:deprecated rows
   "Bare rows aggregation. This is the default behavior, so specifying it is deprecated."
@@ -294,20 +301,19 @@
     (filter {} (time-interval (field-id 100) :current :day)) "
   [f n unit]
   (if-not (integer? n)
-    (let [n (normalize-token n)]
-      (case n
-        :current (recur f  0 unit)
-        :last    (recur f -1 unit)
-        :next    (recur f  1 unit)))
+    (case (normalize-token n)
+      :current (recur f  0 unit)
+      :last    (recur f -1 unit)
+      :next    (recur f  1 unit))
     (let [f (datetime-field f unit)]
       (cond
         (core/= n  0) (= f (value f (relative-datetime :current)))
         (core/= n -1) (= f (value f (relative-datetime -1 unit)))
         (core/= n  1) (= f (value f (relative-datetime  1 unit)))
-        (core/< n -1) (between f (value f (relative-datetime (dec n) unit))
-                                 (value f (relative-datetime      -1 unit)))
-        (core/> n  1) (between f (value f (relative-datetime       1 unit))
-                               (value f (relative-datetime (inc n) unit)))))))
+        (core/< n -1) (between f (value f (relative-datetime  n unit))
+                                 (value f (relative-datetime -1 unit)))
+        (core/> n  1) (between f (value f (relative-datetime  1 unit))
+                                 (value f (relative-datetime  n unit)))))))
 
 (s/defn ^:ql ^:always-validate filter
   "Filter the results returned by the query.
@@ -405,10 +411,10 @@
 
 (s/defn ^:private ^:always-validate expression-fn :- Expression
   [k :- s/Keyword, & args]
-  (i/strict-map->Expression {:operator k, :args (vec (for [arg args]
-                                                       (if (number? arg)
-                                                         (float arg) ; convert args to floats so things like 5 / 10 -> 0.5 instead of 0
-                                                         arg)))}))
+  (i/map->Expression {:operator k, :args (vec (for [arg args]
+                                                (if (number? arg)
+                                                  (float arg) ; convert args to floats so things like 5 / 10 -> 0.5 instead of 0
+                                                  arg)))}))
 
 (def ^:ql ^{:arglists '([rvalue1 rvalue2 & more]), :added "0.17.0"} + "Arithmetic addition function."       (partial expression-fn :+))
 (def ^:ql ^{:arglists '([rvalue1 rvalue2 & more]), :added "0.17.0"} - "Arithmetic subtraction function."    (partial expression-fn :-))
@@ -495,3 +501,14 @@
   `(-> {}
        ~@body
        expand-inner))
+
+
+;;; ------------------------------------------------------------ Other Helper Fns ------------------------------------------------------------
+
+(defn is-clause?
+  "Check to see whether CLAUSE is an instance of the clause named by normalized CLAUSE-KEYWORD.
+
+     (is-clause? :field-id [\"FIELD-ID\" 2000]) ; -> true"
+  [clause-keyword clause]
+  (core/and (sequential? clause)
+            (core/= (normalize-token (first clause)) clause-keyword)))

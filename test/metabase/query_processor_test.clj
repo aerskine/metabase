@@ -3,6 +3,7 @@
    namespaces; there are so many that it is no longer feasible to keep them all in this one.
    Event-based DBs such as Druid are tested in `metabase.driver.event-query-processor-test`."
   (:require [clojure.set :as set]
+            [clojure.tools.logging :as log]
             [expectations :refer :all]
             [metabase.driver :as driver]
             [metabase.test.data :as data]
@@ -17,7 +18,7 @@
     (try
       (require test-ns)
       (catch Throwable e
-        (println (format "Error loading %s: %s" test-ns (.getMessage e)))))))
+        (log/warn (format "Error loading %s: %s" test-ns (.getMessage e)))))))
 
 
 ;;; ------------------------------------------------------------ Helper Fns + Macros ------------------------------------------------------------
@@ -203,8 +204,9 @@
                                 {:target_table_id (data/id :venues)}
                                 {})
                 :target       (target-field (venues-col :id))
-                :special_type (when (data/fks-supported?)
-                                :type/FK)
+                :special_type (if (data/fks-supported?)
+                                :type/FK
+                                :type/Category)
                 :base_type    (data/expected-base-type->actual :type/Integer)
                 :name         (data/format-name "venue_id")
                 :display_name "Venue ID"}
@@ -288,15 +290,22 @@
 
 
 (defn rows
-  "Return the result rows from query results, or throw an Exception if they're missing."
+  "Return the result rows from query RESULTS, or throw an Exception if they're missing."
   {:style/indent 0}
   [results]
-  (vec (or (-> results :data :rows)
+  (vec (or (get-in results [:data :rows])
            (println (u/pprint-to-str 'red results))
            (throw (Exception. "Error!")))))
 
+(defn rows+column-names
+  "Return the result rows and column names from query RESULTS, or throw an Exception if they're missing."
+  {:style/indent 0}
+  [results]
+  {:rows    (rows results)
+   :columns (get-in results [:data :columns])})
+
 (defn first-row
-  "Return the first row in the results of a query, or throw an Exception if they're missing."
+  "Return the first row in the RESULTS of a query, or throw an Exception if they're missing."
   {:style/indent 0}
   [results]
   (first (rows results)))

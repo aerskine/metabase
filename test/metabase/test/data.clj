@@ -4,8 +4,8 @@
                      [walk :as walk])
             [clojure.tools.logging :as log]
             [schema.core :as s]
-            (metabase [db :as db]
-                      [driver :as driver])
+            [toucan.db :as db]
+            [metabase.driver :as driver]
             (metabase.models [database :refer [Database]]
                              [field :refer [Field] :as field]
                              [table :refer [Table]])
@@ -105,6 +105,7 @@
   "Call `driver/process-query` on expanded inner QUERY, looking up the `Database` ID for the `source-table.`
 
      (run-query* (query (source-table 5) ...))"
+  {:style/indent 0}
   [query :- qi/Query]
   (qp/process-query (wrap-inner-query query)))
 
